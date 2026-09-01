@@ -1,0 +1,46 @@
+{
+  "default": "simnet",
+  "profiles": {
+    "baseline": {
+      "model": "large-v3",
+      "device": "cuda",
+      "compute_type": "float16",
+      "vad_filter": true,
+      "hotwords": null
+    },
+    "simnet": {
+      "model": "large-v3",
+      "device": "cuda",
+      "compute_type": "float16",
+      "vad_filter": true,
+      "hotwords": [
+        "SIMNET",
+        "Сімнет",
+        "NAT",
+        "NAT type",
+        "IPv4",
+        "IPv6",
+        "MAC",
+        "MAC-адрес",
+        "Cudy",
+        "MikroTik",
+        "TP-Link",
+        "ONU",
+        "ONT",
+        "OLT",
+        "GPON",
+        "EPON",
+        "GEPON",
+        "Juniper",
+        "BRAS",
+        "VLAN",
+        "DHCP",
+        "PPPoE",
+        "Wi-Fi",
+        "Ethernet",
+        "статический IP",
+        "выделенный IP"
+      ]
+    }
+  }
+}

@@ -1,0 +1,54 @@
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Python environments and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.venv*/
+venv/
+venv*/
+env/
+env*/
+
+# Runtime and private data
+logs/
+results/
+test_audio/
+tmp/
+cache/
+models/
+
+# Audio and large/generated archives
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.webm
+*.flac
+*.log
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# Heavy experiment artifacts; source scripts remain trackable
+experiments/**/.cache/
+experiments/**/*.nemo
+experiments/**/*.ckpt
+experiments/**/*.bin
+experiments/**/*.safetensors
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
