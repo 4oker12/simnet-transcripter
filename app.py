@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from faster_whisper import WhisperModel
 
 ROOT = Path(__file__).resolve().parent
@@ -17,6 +17,7 @@ LOG_DIR, TMP_DIR, MODEL_DIR = ROOT / "logs", ROOT / "tmp", ROOT / "models"
 PROFILE_CONFIG = ROOT / "config" / "asr_profiles.json"
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".webm", ".flac"}
 ALLOWED_LANGUAGES = {"auto", "uk", "ru"}
+QUEUE_CHECK_INTERVAL_SECONDS = 0.5
 for directory in (LOG_DIR, TMP_DIR, MODEL_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s", handlers=[logging.StreamHandler(), logging.FileHandler(LOG_DIR / "server.log", encoding="utf-8")], force=True)
@@ -29,6 +30,8 @@ class RuntimeState:
     model_name = "unknown"
     device = "unknown"
     compute_type = "unknown"
+    waiting_requests = 0
+    active_request = False
 
 
 state = RuntimeState()
@@ -88,13 +91,22 @@ async def lifespan(_: FastAPI):
     state.model = None
 
 
-app = FastAPI(title="Simnet Transcriber", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Simnet Transcriber", version="1.2.0", lifespan=lifespan)
 
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
     config = read_profiles()
-    return {"ok": state.model is not None, "model": state.model_name, "device": state.device, "compute_type": state.compute_type, "gpu": state.gpu_name, "default_profile": config["default"]}
+    return {
+        "ok": state.model is not None,
+        "model": state.model_name,
+        "device": state.device,
+        "compute_type": state.compute_type,
+        "gpu": state.gpu_name,
+        "default_profile": config["default"],
+        "busy": bool(state.active_request or inference_lock.locked()),
+        "waiting_requests": int(state.waiting_requests),
+    }
 
 
 @app.get("/profiles")
@@ -133,8 +145,24 @@ def transcribe_file(path: str, language: str, profile_name: str, profile: dict[s
     return result
 
 
+async def acquire_inference_slot(request: Request) -> None:
+    state.waiting_requests += 1
+    try:
+        while True:
+            if await request.is_disconnected():
+                logger.info("Dropping disconnected request before inference slot")
+                raise HTTPException(status_code=499, detail="client cancelled before inference")
+            try:
+                await asyncio.wait_for(inference_lock.acquire(), timeout=QUEUE_CHECK_INTERVAL_SECONDS)
+                return
+            except TimeoutError:
+                continue
+    finally:
+        state.waiting_requests = max(0, state.waiting_requests - 1)
+
+
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...), language: str = Form("auto"), profile: str | None = Form(None)) -> dict[str, Any]:
+async def transcribe(request: Request, file: UploadFile = File(...), language: str = Form("auto"), profile: str | None = Form(None)) -> dict[str, Any]:
     requested_language = language.strip().lower()
     if requested_language not in ALLOWED_LANGUAGES:
         raise HTTPException(status_code=400, detail="language must be one of: auto, uk, ru")
@@ -145,23 +173,34 @@ async def transcribe(file: UploadFile = File(...), language: str = Form("auto"),
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="supported formats: mp3, wav, m4a, ogg, webm, flac")
-    async with inference_lock:
-        temp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(mode="wb", suffix=suffix, prefix="upload_", dir=TMP_DIR, delete=False) as output:
-                temp_path = output.name
-                while chunk := await file.read(1024 * 1024):
-                    output.write(chunk)
-            return await asyncio.to_thread(transcribe_file, temp_path, requested_language, requested_profile, config["profiles"][requested_profile])
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.exception("Transcription failed")
-            raise HTTPException(status_code=500, detail=f"transcription failed: {exc}") from exc
-        finally:
-            await file.close()
-            if temp_path:
-                try:
-                    os.unlink(temp_path)
-                except FileNotFoundError:
-                    pass
+
+    await acquire_inference_slot(request)
+    temp_path = None
+    state.active_request = True
+    try:
+        if await request.is_disconnected():
+            logger.info("Dropping disconnected request after inference slot acquisition")
+            raise HTTPException(status_code=499, detail="client cancelled before inference")
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=suffix, prefix="upload_", dir=TMP_DIR, delete=False) as output:
+            temp_path = output.name
+            while chunk := await file.read(1024 * 1024):
+                output.write(chunk)
+        if await request.is_disconnected():
+            logger.info("Dropping disconnected request before GPU inference")
+            raise HTTPException(status_code=499, detail="client cancelled before inference")
+        return await asyncio.to_thread(transcribe_file, temp_path, requested_language, requested_profile, config["profiles"][requested_profile])
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Transcription failed")
+        raise HTTPException(status_code=500, detail=f"transcription failed: {exc}") from exc
+    finally:
+        state.active_request = False
+        if inference_lock.locked():
+            inference_lock.release()
+        await file.close()
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
