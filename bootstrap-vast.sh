@@ -79,12 +79,11 @@ fi
 ctl reread >/dev/null
 ctl update >/dev/null || true
 
-if ! ctl status simnet-transcriber >/dev/null 2>&1; then
-  # supervisorctl returns non-zero for STOPPED, so verify registration via avail.
-  if ! ctl avail 2>/dev/null | grep -q '^simnet-transcriber'; then
-    say 'Supervisor did not register simnet-transcriber.' >&2
-    exit 24
-  fi
+program_status="$(ctl status simnet-transcriber 2>&1 || true)"
+if [[ -z "$program_status" || "$program_status" == *'no such process'* || "$program_status" == *'ERROR'* ]]; then
+  say 'Supervisor did not register simnet-transcriber.' >&2
+  printf '%s\n' "$program_status" >&2
+  exit 24
 fi
 
 if [[ "${1:-}" == '--no-start' ]]; then
