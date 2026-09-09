@@ -62,12 +62,24 @@ if [[ -z "$CONF_DIR" ]]; then
 fi
 install -m 0644 "$ROOT/simnet-transcriber.conf" "$CONF_DIR/simnet-transcriber.conf"
 
+if ! supervisorctl status >/dev/null 2>&1; then
+  if have supervisord; then
+    supervisord -c /etc/supervisor/supervisord.conf >/tmp/simnet-supervisord-bootstrap.log 2>&1 || true
+    sleep 1
+  fi
+fi
+if ! supervisorctl status >/dev/null 2>&1; then
+  say 'Supervisor daemon is unavailable.' >&2
+  cat /tmp/simnet-supervisord-bootstrap.log 2>/dev/null || true
+  exit 23
+fi
+
 supervisorctl reread >/dev/null
 supervisorctl update >/dev/null || true
 
 if ! supervisorctl status simnet-transcriber >/dev/null 2>&1; then
   say 'Supervisor did not register simnet-transcriber.' >&2
-  exit 23
+  exit 24
 fi
 
 if [[ "${1:-}" == '--no-start' ]]; then
