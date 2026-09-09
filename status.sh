@@ -1,8 +1,9 @@
 #!/bin/bash
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "Supervisor: $(supervisorctl status simnet-transcriber 2>&1)"
-pid="$(supervisorctl pid simnet-transcriber 2>/dev/null || true)"
+ctl() { supervisorctl -c "$ROOT/simnet-supervisord.conf" "$@"; }
+echo "Supervisor: $(ctl status simnet-transcriber 2>&1)"
+pid="$(ctl pid simnet-transcriber 2>/dev/null || true)"
 [[ "$pid" =~ ^[0-9]+$ ]] || pid="-"
 echo "Backend PID: $pid"
 if health="$(curl -fsS --max-time 5 http://127.0.0.1:8000/health 2>/dev/null)"; then
