@@ -10,6 +10,14 @@ ctl() { supervisorctl -c "$ROOT/simnet-supervisord.conf" "$@"; }
 
 say '=== SIMNET TRANSCRIBER BOOTSTRAP ==='
 
+# START-WORKBENCH may call this on every launch. If the already-managed service
+# is healthy, do not reinstall Python packages or touch Supervisor again.
+if have curl && curl -fsS --max-time 3 http://127.0.0.1:8000/health 2>/dev/null | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then
+  say 'Transcriber already healthy; bootstrap skipped.'
+  say '=== TRANSCRIBER_READY ==='
+  exit 0
+fi
+
 missing=()
 for cmd in git curl jq ffmpeg supervisorctl supervisord; do
   have "$cmd" || missing+=("$cmd")
