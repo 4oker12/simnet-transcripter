@@ -76,7 +76,9 @@ def load_model() -> WhisperModel:
     state.model_name, state.device, state.compute_type = profile["model"], profile["device"], profile["compute_type"]
     logger.info("Loading one shared model: model=%s device=%s compute_type=%s", state.model_name, state.device, state.compute_type)
     started = time.perf_counter()
-    model = WhisperModel(state.model_name, device=state.device, compute_type=state.compute_type, download_root=str(MODEL_DIR))
+    model_path = os.environ.get("SIMNET_MODEL_PATH", state.model_name)
+    logger.info("Model source: %s", model_path)
+    model = WhisperModel(model_path, device=state.device, compute_type=state.compute_type, download_root=str(MODEL_DIR), local_files_only=bool(os.environ.get("SIMNET_MODEL_PATH")))
     logger.info("Model loaded successfully in %.3f seconds", time.perf_counter() - started)
     return model
 

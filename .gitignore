@@ -52,3 +52,28 @@ experiments/**/*.safetensors
 .vscode/
 .idea/
 .DS_Store
+
+# Model downloads and Hugging Face caches
+*.incomplete
+*.part
+.cache/
+.hf_home/
+huggingface/
+
+# Temporary files and local backups
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+*.bak
+*.backup
+backups/
+
+# Additional audio formats
+*.aac
+*.opus
+*.wma
+*.aiff
+*.aif
+*.pcm
